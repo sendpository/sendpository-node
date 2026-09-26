@@ -2,6 +2,12 @@
 
 ## 0.5.0
 
+- `npx sendpository init` connects a project in one step: it opens the
+  browser to approve (or sign up), saves the new key to `.env.local` or `.env`,
+  makes sure git ignores that file, documents the variable in `.env.example`,
+  installs the SDK with the project's package manager and the agent skill, and
+  sends a test email where the account allows. `--env-file`, `--no-install`,
+  `--no-agents` and `--no-test` are supported.
 - `npx sendpository agents` installs the Sendpository skill for AI coding
   agents into your project: `.claude/skills/sendpository/` for Claude Code, a
   section in `AGENTS.md` for Codex, Copilot, Gemini CLI and others, and a

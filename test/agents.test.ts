@@ -65,10 +65,11 @@ describe("npx sendpository agents", () => {
     expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
   });
 
-  it("refuses unknown options and prints help for unknown commands", () => {
-    expect(main(["agents", "--everything"], project())).toBe(1);
-    expect(main(["deploy"], project())).toBe(1);
-    expect(main(["--help"], project())).toBe(0);
+  it("refuses unknown options and prints help for unknown commands", async () => {
+    expect(await main(["agents", "--everything"], project())).toBe(1);
+    expect(await main(["deploy"], project())).toBe(1);
+    expect(await main(["--help"], project())).toBe(0);
+    expect(await main(["init", "--everything"], project())).toBe(1);
   });
 });
 

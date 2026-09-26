@@ -52,10 +52,15 @@ Before writing code, check what the project already has:
 
 - `sendpository` in `package.json`? If not and it's a Node/TypeScript project:
   `npm install sendpository` (or the project's package manager).
-- `SENDPOSITORY_API_KEY` in `.env.example` / `.env.local`? If not, add
-  `SENDPOSITORY_API_KEY=` to `.env.example` (no value) and tell the user to
-  create a key under **API keys** in the dashboard and put it in their local
-  env file and their host's environment settings.
+- `SENDPOSITORY_API_KEY` in the env file? If not, the fastest route is
+  `npx sendpository@latest init`: it prints a code and opens the user's
+  browser; once they approve (signing up if needed) it writes the key to
+  `.env.local` or `.env`, adds that file to `.gitignore`, installs the SDK and
+  this skill, and sends a test email where the account allows. Tell the user
+  to approve in the browser, then wait for the command to finish. Otherwise
+  add `SENDPOSITORY_API_KEY=` to `.env.example` and have the user create a
+  key under **API keys**. Either way, the key must also go into the host's
+  environment settings for production.
 - A verified sending domain? Ask the user which `from` address to use if the
   project doesn't already configure one. A good pattern is a
   `EMAIL_FROM="App Name <hello@mail.yourdomain.com>"` environment variable.

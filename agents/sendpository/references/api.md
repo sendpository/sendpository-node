@@ -7,9 +7,9 @@ Authorization: Bearer <SENDPOSITORY_API_KEY>
 Content-Type: application/json
 ```
 
-Keys have one of two permissions. **`sending`** keys can only send and read
-mail (`/emails`). **`full_access`** keys can also manage domains, API keys,
-webhooks, logs and receiving. Use a `sending` key in application code.
+Keys have one of two permissions. **`sending`** keys can send and read mail
+(`/emails`) and read domains. **`full_access`** keys can also add, verify and
+delete domains, and manage API keys, webhooks, logs and receiving. Use a `sending` key in application code.
 
 Lists take `limit` (1-100, default 25) and `offset`, and return
 `{ data, limit, offset, total }` unless noted.
@@ -53,7 +53,10 @@ Timeline event names: `email.queued`, `email.scheduled`, `email.sent`,
 `email.failed`, `email.opened`, `email.clicked`, `email.unsubscribed`,
 `email.cancelled`.
 
-## Domains (full_access)
+## Domains
+
+Any key can list and read domains; adding, verifying and deleting need
+`full_access`.
 
 | Method | Path | SDK | Notes |
 |---|---|---|---|

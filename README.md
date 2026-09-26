@@ -25,6 +25,16 @@ typed end to end (webhook payloads included), and it runs on Node 18+, Bun
 and Deno. Cloudflare Workers need the `nodejs_compat` flag, because webhook
 verification uses `node:crypto`.
 
+## Set up in one command
+
+```bash
+npx sendpository init
+```
+
+Opens your browser to approve (or sign up), then saves the API key to your env
+file and keeps it out of git, installs this package and the agent skill below,
+and sends you a test email where your account allows.
+
 ## Using an AI coding agent?
 
 ```bash

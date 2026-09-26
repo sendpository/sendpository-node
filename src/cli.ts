@@ -13,6 +13,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_APP_URL, runInit, type InitDeps } from "./init.js";
 
 const START = "<!-- sendpository:start -->";
 const END = "<!-- sendpository:end -->";
@@ -116,6 +117,16 @@ export function install(opts: Options): Change[] {
 
 const HELP = `Sendpository CLI
 
+  npx sendpository init              Connect this project in one step: approve in the
+                                     browser, and the key lands in your .env, the SDK
+                                     and the agent skill are installed, and a test
+                                     email is sent where your account allows it.
+      --env-file <file>              Where to write the key (default .env.local for
+                                     Next.js/Vite projects, otherwise .env).
+      --no-install                   Don't install the sendpository package.
+      --no-agents                    Don't install the agent skill.
+      --no-test                      Don't send a test email.
+
   npx sendpository agents            Install the Sendpository skill for AI coding
                                      agents (Claude Code, Codex, Cursor, Copilot...)
                                      into this project.
@@ -127,8 +138,9 @@ const HELP = `Sendpository CLI
 Docs: https://sendpository.com/agents
 `;
 
-export function main(argv: string[], cwd = process.cwd()): number {
+export async function main(argv: string[], cwd = process.cwd(), deps?: InitDeps): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === "init") return init(rest, cwd, deps);
   if (command !== "agents") {
     process.stdout.write(HELP);
     return command === undefined || command === "help" || command === "--help" || command === "-h" ? 0 : 1;
@@ -154,4 +166,30 @@ export function main(argv: string[], cwd = process.cwd()): number {
     );
   }
   return 0;
+}
+
+async function init(args: string[], cwd: string, deps?: InitDeps) {
+  const flags = new Set(["--no-install", "--no-agents", "--no-test"]);
+  let envFile: string | undefined;
+  let appUrl = process.env.SENDPOSITORY_APP_URL ?? DEFAULT_APP_URL;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--env-file" && args[i + 1]) envFile = args[++i];
+    else if (a === "--app-url" && args[i + 1]) appUrl = args[++i]!;
+    else if (!flags.has(a)) {
+      process.stderr.write(`Unknown option: ${a}\n\n${HELP}`);
+      return 1;
+    }
+  }
+  return runInit(
+    {
+      cwd,
+      appUrl: appUrl.replace(/\/$/, ""),
+      envFile,
+      install: !args.includes("--no-install"),
+      agents: !args.includes("--no-agents"),
+      test: !args.includes("--no-test"),
+    },
+    deps,
+  );
 }
