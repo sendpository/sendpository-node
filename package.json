@@ -67,7 +67,7 @@
     "sync:skill": "node scripts/sync-skill.mjs"
   },
   "devDependencies": {
-    "@types/node": "^20.19.43",
+    "@types/node": "^26.6.2",
     "tsup": "^8.5.0",
     "typescript": "^5",
     "vitest": "^3.2.0"
