@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1
+
+- `npx sendpository init` keeps a key the project already has instead of
+  connecting again and replacing it. `--force` connects and replaces it.
+- The SDK install inside `init` no longer runs npm's audit, which reported on
+  the whole project (this package has no dependencies) and read as if
+  installing Sendpository had caused it.
+- The test email `init` sends reads like a real message, which fares better
+  with spam filters.
+- Agent skill: examples construct the client as
+  `new Sendpository(process.env.SENDPOSITORY_API_KEY)`, and a new section
+  covers running Sendpository alongside another provider with safe failover.
+
 ## 0.5.0
 
 - `npx sendpository init` connects a project in one step: it opens the

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { chooseEnvFile, ensureIgnored, packageManager, runInit, writeEnvKey, type InitDeps } from "../src/init.js";
+import { chooseEnvFile, ensureIgnored, existingKeyFile, packageManager, runInit, writeEnvKey, type InitDeps } from "../src/init.js";
 
 const project = (files: Record<string, string> = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "sp-init-"));
@@ -70,7 +70,7 @@ describe("npx sendpository init", () => {
     expect(read(cwd, ".gitignore")).toContain(".env.local");
     expect(read(cwd, ".env.example")).toContain("SENDPOSITORY_API_KEY=\n");
     expect(read(cwd, ".env.example")).not.toContain(KEY);
-    expect(runs).toEqual(["npm install sendpository"]);
+    expect(runs).toEqual(["npm install sendpository --no-audit --no-fund"]);
     expect(existsSync(join(cwd, ".claude/skills/sendpository/SKILL.md"))).toBe(true);
     const send = calls.find((c) => c.url === "https://api.test/v1/emails")!;
     expect(send.headers.authorization).toBe(`Bearer ${KEY}`);
@@ -102,6 +102,31 @@ describe("npx sendpository init", () => {
     const { d, runs } = deps(fakeServer(approved).fetchFn);
     await runInit(options(cwd), d);
     expect(runs).toEqual([]);
+  });
+
+  it("keeps a key the project already has, and creates no new one", async () => {
+    const cwd = project({ ".env.local": "SENDPOSITORY_API_KEY=sp_existing_key_123\n", "package.json": JSON.stringify({ name: "x" }) });
+    const { fetchFn, calls } = fakeServer(approved);
+    const { d, log } = deps(fetchFn);
+    await runInit(options(cwd), d);
+    expect(calls).toEqual([]); // never asked for a new key
+    expect(read(cwd, ".env.local")).toBe("SENDPOSITORY_API_KEY=sp_existing_key_123\n");
+    expect(log.join("\n")).toContain("keeping it");
+    expect(existsSync(join(cwd, ".claude/skills/sendpository/SKILL.md"))).toBe(true); // the rest still happens
+  });
+
+  it("replaces an existing key only with --force", async () => {
+    const cwd = project({ ".env": "SENDPOSITORY_API_KEY=sp_old\n" });
+    const { fetchFn, calls } = fakeServer(approved);
+    await runInit({ ...options(cwd), force: true }, deps(fetchFn).d);
+    expect(calls.some((c) => c.url.endsWith("/start"))).toBe(true);
+    expect(read(cwd, ".env")).toBe(`SENDPOSITORY_API_KEY=${KEY}\n`);
+  });
+
+  it("treats an empty key line as no key", () => {
+    expect(existingKeyFile(project({ ".env": "SENDPOSITORY_API_KEY=\n" }))).toBeNull();
+    expect(existingKeyFile(project({ ".env": 'SENDPOSITORY_API_KEY=""\n' }))).toBeNull();
+    expect(existingKeyFile(project({ ".env": "export SENDPOSITORY_API_KEY=sp_x\n" }))).toBe(".env");
   });
 
   it("stops on a denied request without touching the project", async () => {
@@ -168,7 +193,7 @@ describe("init helpers", () => {
     expect(packageManager(project({ "pnpm-lock.yaml": "" }))[0]).toBe("pnpm");
     expect(packageManager(project({ "yarn.lock": "" }))[0]).toBe("yarn");
     expect(packageManager(project({ "bun.lock": "" }))[0]).toBe("bun");
-    expect(packageManager(project())[0]).toBe("npm");
+    expect(packageManager(project())).toEqual(["npm", ["install", "sendpository", "--no-audit", "--no-fund"]]);
   });
 
   it("asks git whether the env file is ignored, when it's a repo", () => {

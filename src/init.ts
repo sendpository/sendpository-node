@@ -22,6 +22,8 @@ export type InitOptions = {
   cwd: string;
   appUrl: string;
   envFile?: string;
+  /** Connect and replace a key the project already has. */
+  force?: boolean;
   install: boolean;
   agents: boolean;
   test: boolean;
@@ -137,7 +139,9 @@ export function packageManager(cwd: string): [string, string[]] {
   if (existsSync(join(cwd, "pnpm-lock.yaml"))) return ["pnpm", ["add", "sendpository"]];
   if (existsSync(join(cwd, "yarn.lock"))) return ["yarn", ["add", "sendpository"]];
   if (existsSync(join(cwd, "bun.lockb")) || existsSync(join(cwd, "bun.lock"))) return ["bun", ["add", "sendpository"]];
-  return ["npm", ["install", "sendpository"]];
+  // npm's audit reports on the whole project, not this package (which has no
+  // dependencies) - noise that reads as if installing Sendpository caused it.
+  return ["npm", ["install", "sendpository", "--no-audit", "--no-fund"]];
 }
 
 async function connect(opts: InitOptions, deps: InitDeps): Promise<Approved> {
@@ -182,14 +186,36 @@ async function connect(opts: InitOptions, deps: InitDeps): Promise<Approved> {
   throw new Error("The code expired before it was approved. Run `npx sendpository init` again.");
 }
 
-export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Promise<number> {
-  deps.log("Sendpository - connecting this project");
-  const approved = await connect(opts, deps);
-  deps.log(`✓ Connected${approved.email ? ` to ${approved.email}` : ""}`);
+/** Where the project already sets a non-empty key, if anywhere. */
+export function existingKeyFile(cwd: string, preferred?: string) {
+  const candidates = [...new Set([preferred, ".env.local", ".env"].filter((f): f is string => Boolean(f)))];
+  const pattern = new RegExp(`^\\s*(export\\s+)?${KEY}\\s*=\\s*["']?([^"'\\s#]+)`, "m");
+  return candidates.find((f) => {
+    const path = join(cwd, f);
+    return existsSync(path) && pattern.test(readFileSync(path, "utf8"));
+  }) ?? null;
+}
 
-  const envFile = opts.envFile ?? chooseEnvFile(opts.cwd);
-  const how = writeEnvKey(join(opts.cwd, envFile), approved.api_key);
-  deps.log(`✓ ${how === "replaced" ? "Replaced" : "Saved"} ${KEY} in ${envFile}${how === "replaced" ? " (the old key still works until you revoke it)" : ""}`);
+export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Promise<number> {
+  deps.log("Sendpository - setting up this project");
+
+  /*
+   * A project that already has a key keeps it. Connecting again would mint a
+   * second key and quietly swap it in - surprising for a working project, and
+   * it leaves the old key live in the account.
+   */
+  const already = opts.force ? null : existingKeyFile(opts.cwd, opts.envFile);
+  let approved: Approved | null = null;
+  let envFile = opts.envFile ?? already ?? chooseEnvFile(opts.cwd);
+  if (already) {
+    envFile = already;
+    deps.log(`✓ Found ${KEY} in ${already} - keeping it. Run with --force to connect again and replace it.`);
+  } else {
+    approved = await connect(opts, deps);
+    deps.log(`✓ Connected${approved.email ? ` to ${approved.email}` : ""}`);
+    const how = writeEnvKey(join(opts.cwd, envFile), approved.api_key);
+    deps.log(`✓ ${how === "replaced" ? "Replaced" : "Saved"} ${KEY} in ${envFile}${how === "replaced" ? " (the old key still works until you revoke it)" : ""}`);
+  }
   const ignored = ensureIgnored(opts.cwd, envFile);
   if (ignored === "added") deps.log(`✓ Added ${envFile} to .gitignore so the key is never committed`);
   if (documentInExample(opts.cwd)) deps.log(`✓ Documented ${KEY} in .env.example (no value)`);
@@ -209,7 +235,7 @@ export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Pro
   }
 
   let tested = false;
-  if (opts.test && approved.sandbox_from && approved.email) {
+  if (approved && opts.test && approved.sandbox_from && approved.email) {
     const res = await deps.fetch(`${approved.api_url}/emails`, {
       method: "POST",
       headers: {
@@ -220,9 +246,11 @@ export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Pro
       body: JSON.stringify({
         from: `Sendpository <${approved.sandbox_from}>`,
         to: [approved.email],
+        // A real-looking email, not a two-line "test": thin test messages are
+        // what spam filters learn to distrust.
         subject: "Your project is connected to Sendpository",
-        html: `<p>This test email was sent by <code>npx sendpository init</code> from <strong>${escapeHtml(basename(opts.cwd))}</strong>.</p><p>Next: verify your own domain so you can send to anyone.</p>`,
-        text: `This test email was sent by npx sendpository init from ${basename(opts.cwd)}.\n\nNext: verify your own domain so you can send to anyone.`,
+        html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f2933;max-width:520px"><p>Hi,</p><p>Your project <strong>${escapeHtml(basename(opts.cwd))}</strong> is now connected to Sendpository, and this email was sent by <code>npx sendpository init</code> to confirm it works.</p><p><strong>Next step:</strong> add your domain so you can send from your own address to anyone.</p><p><a href="${approved.app_url}/domains" style="color:#0b7a55">Add your domain</a></p><p style="color:#6b7780;font-size:13px">You're receiving this because you ran npx sendpository init and approved it in your Sendpository account.</p></div>`,
+        text: `Hi,\n\nYour project ${basename(opts.cwd)} is now connected to Sendpository, and this email was sent by npx sendpository init to confirm it works.\n\nNext step: add your domain so you can send from your own address to anyone - ${approved.app_url}/domains\n\nYou're receiving this because you ran npx sendpository init and approved it in your Sendpository account.`,
       }),
     });
     if (res.ok) {
@@ -236,13 +264,13 @@ export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Pro
 
   deps.log("");
   deps.log("Next:");
-  deps.log(`  1. Add your sending domain: ${approved.app_url}/domains`);
+  deps.log(`  1. Add your sending domain: ${approved?.app_url ?? opts.appUrl}/domains`);
   deps.log(
     opts.agents
       ? '  2. Ask your coding agent: "Add Sendpository email to this project."'
       : "  2. Send from your code: https://sendpository.com/docs/quickstart",
   );
-  if (!tested && !approved.sandbox_from) deps.log("     Sending works once the domain is verified.");
+  if (approved && !tested && !approved.sandbox_from) deps.log("     Sending works once the domain is verified.");
   return 0;
 }
 

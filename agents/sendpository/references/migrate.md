@@ -48,7 +48,7 @@ provider's own documentation.
 ```ts
 import { Sendpository, SendpositoryError } from "sendpository";
 
-const sendpository = new Sendpository(); // SENDPOSITORY_API_KEY
+const sendpository = new Sendpository(process.env.SENDPOSITORY_API_KEY);
 
 const { id } = await sendpository.emails.send(
   {

@@ -126,6 +126,8 @@ const HELP = `Sendpository CLI
       --no-install                   Don't install the sendpository package.
       --no-agents                    Don't install the agent skill.
       --no-test                      Don't send a test email.
+      --force                        Connect again even if the project already has
+                                     a key, and replace it.
 
   npx sendpository agents            Install the Sendpository skill for AI coding
                                      agents (Claude Code, Codex, Cursor, Copilot...)
@@ -169,7 +171,7 @@ export async function main(argv: string[], cwd = process.cwd(), deps?: InitDeps)
 }
 
 async function init(args: string[], cwd: string, deps?: InitDeps) {
-  const flags = new Set(["--no-install", "--no-agents", "--no-test"]);
+  const flags = new Set(["--no-install", "--no-agents", "--no-test", "--force"]);
   let envFile: string | undefined;
   let appUrl = process.env.SENDPOSITORY_APP_URL ?? DEFAULT_APP_URL;
   for (let i = 0; i < args.length; i++) {
@@ -186,6 +188,7 @@ async function init(args: string[], cwd: string, deps?: InitDeps) {
       cwd,
       appUrl: appUrl.replace(/\/$/, ""),
       envFile,
+      force: args.includes("--force"),
       install: !args.includes("--no-install"),
       agents: !args.includes("--no-agents"),
       test: !args.includes("--no-test"),

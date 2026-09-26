@@ -70,8 +70,8 @@ Before writing code, check what the project already has:
 ```ts
 import { Sendpository, SendpositoryError } from "sendpository";
 
-// Reads SENDPOSITORY_API_KEY when no key is passed.
-const sendpository = new Sendpository();
+const sendpository = new Sendpository(process.env.SENDPOSITORY_API_KEY);
+// Shorthand: new Sendpository() reads SENDPOSITORY_API_KEY itself.
 
 const { id } = await sendpository.emails.send({
   from: "Acme <hello@mail.yourdomain.com>",
@@ -116,6 +116,49 @@ const results = await sendpository.emails.sendBatch([msgA, msgB]);
 A batch has no idempotency key, so the SDK does not retry it after a timeout
 (it may already have sent). Use single sends with idempotency keys when a
 duplicate would matter.
+
+## Running alongside another provider
+
+A common shape: the app already sends with another provider, or wants one as
+a fallback. Build it like this:
+
+- **One email module** (`lib/email`) that every call site uses. Nothing else
+  imports a provider's SDK.
+- **The active provider is configuration**, read at send time:
+  `EMAIL_PROVIDER=sendpository` (an admin setting can override it), so
+  switching - or switching back - needs no deploy.
+- **Fail over only when Sendpository didn't take the message**: a
+  `SendpositoryError` whose `type` is `internal_error`, or
+  `rate_limit_exceeded` after the SDK's own retries. Never fail over on
+  `validation_error`, `suppressed_recipient`, `domain_not_verified` or
+  `quota_exceeded` - the other provider would send mail you were just told
+  not to send.
+- **On `connection_error` (a timeout), retry Sendpository first** with the
+  same idempotency key; the message may already have been accepted, and
+  idempotency keys don't carry across providers, so failing over there can
+  send it twice.
+- **Keep the suppression lists in step** (import the other provider's bounces
+  into Sendpository, and the reverse), and have the webhook handler accept
+  both providers' events, mapped to one set of names.
+
+```ts
+// lib/email.ts
+export async function sendEmail(message: Message, key: string) {
+  const provider = process.env.EMAIL_PROVIDER ?? "sendpository";
+  if (provider !== "sendpository") return sendWithOther(message, key);
+  try {
+    return await sendpository.emails.send(toSendpository(message), { idempotencyKey: key });
+  } catch (err) {
+    const failover =
+      err instanceof SendpositoryError && (err.type === "internal_error" || err.type === "rate_limit_exceeded");
+    if (failover && process.env.EMAIL_FALLBACK) return sendWithOther(message, key);
+    throw err;
+  }
+}
+```
+
+Moving off another provider entirely is covered step by step in
+`references/migrate.md`.
 
 ## Without the SDK (any language)
 

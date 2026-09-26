@@ -9,7 +9,7 @@ Keep the send on the server in every case.
 // lib/email.ts
 import { Sendpository } from "sendpository";
 
-export const sendpository = new Sendpository(); // reads SENDPOSITORY_API_KEY
+export const sendpository = new Sendpository(process.env.SENDPOSITORY_API_KEY);
 export const EMAIL_FROM = process.env.EMAIL_FROM ?? "App <hello@mail.yourdomain.com>";
 ```
 
