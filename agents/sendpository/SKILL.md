@@ -1,6 +1,6 @@
 ---
 name: sendpository
-description: Add email to an app with Sendpository - sending transactional email (sign-up confirmations, password resets, OTP codes, receipts, notifications), batch sends, scheduling, attachments, delivery webhooks, and receiving email. Use when the user mentions Sendpository, a SENDPOSITORY_API_KEY, the `sendpository` npm package, or asks to send or receive email in a project that uses Sendpository.
+description: Add email to an app with Sendpository - sending transactional email (sign-up confirmations, password resets, OTP codes, receipts, notifications), batch sends, scheduling, attachments, delivery webhooks, receiving email, and migrating from Resend, SendGrid, Postmark, Mailgun, Amazon SES or Nodemailer/SMTP. Use when the user mentions Sendpository, a SENDPOSITORY_API_KEY, the `sendpository` npm package, or asks to send or receive email in a project that uses Sendpository, or to switch a project's email to Sendpository.
 ---
 
 # Sendpository
@@ -22,6 +22,7 @@ matches the task:
 | Receiving delivery/bounce/open events, verifying signatures | `references/webhooks.md` |
 | Next.js, Express, serverless, Python, curl examples | `references/frameworks.md` |
 | Receiving email at your own addresses | `references/receiving.md` |
+| Moving from Resend, SendGrid, Postmark, Mailgun, Amazon SES or Nodemailer | `references/migrate.md` |
 
 ## Rules that are never optional
 

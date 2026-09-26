@@ -7,6 +7,8 @@
   section in `AGENTS.md` for Codex, Copilot, Gemini CLI and others, and a
   Cursor rule when the project uses Cursor. `--global`, `--dry-run` and
   `--print` are supported. Nothing is written on `npm install`.
+- The skill includes a migration guide (`references/migrate.md`) for moving
+  from Resend, SendGrid, Postmark, Mailgun, Amazon SES or Nodemailer.
 - The skill ships in the package at `agents/sendpository/`, so an agent reads
   instructions that match the SDK version installed.
 

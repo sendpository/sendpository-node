@@ -73,7 +73,7 @@ describe("npx sendpository agents", () => {
 });
 
 describe("the skill matches this SDK", () => {
-  const all = ["SKILL.md", "references/api.md", "references/webhooks.md", "references/frameworks.md", "references/receiving.md"]
+  const all = ["SKILL.md", "references/api.md", "references/webhooks.md", "references/frameworks.md", "references/receiving.md", "references/migrate.md"]
     .map((f) => read(source, f))
     .join("\n");
   const client = new Sendpository("sp_test_key") as unknown as Record<string, Record<string, unknown>>;
