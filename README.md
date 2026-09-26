@@ -25,6 +25,19 @@ typed end to end (webhook payloads included), and it runs on Node 18+, Bun
 and Deno. Cloudflare Workers need the `nodejs_compat` flag, because webhook
 verification uses `node:crypto`.
 
+## Using an AI coding agent?
+
+```bash
+npx sendpository agents
+```
+
+Installs the Sendpository skill into your project so Claude Code, Codex,
+Cursor, Copilot and other agents write email code the right way - key on the
+server, verified `from` address, idempotent retries, verified webhooks. It
+only adds instruction files (`.claude/skills/sendpository/`, a section in
+`AGENTS.md`, a Cursor rule if you use Cursor); run it again to update them.
+See [sendpository.com/agents](https://sendpository.com/agents).
+
 ## Before your first send
 
 1. Create an account at [sendpository.com](https://sendpository.com).

@@ -1,6 +1,6 @@
 {
   "name": "sendpository",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Official Node.js and TypeScript client for the Sendpository transactional email API.",
   "keywords": [
     "email",
@@ -12,7 +12,10 @@
     "send-email",
     "dkim",
     "webhooks",
-    "typescript"
+    "typescript",
+    "ai-agents",
+    "claude-code",
+    "agent-skills"
   ],
   "homepage": "https://sendpository.com/docs/guides/sdk",
   "repository": {
@@ -30,6 +33,9 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "sendpository": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": {
@@ -44,6 +50,7 @@
   },
   "files": [
     "dist",
+    "agents",
     "README.md"
   ],
   "engines": {
@@ -56,7 +63,8 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "sync:skill": "node scripts/sync-skill.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
