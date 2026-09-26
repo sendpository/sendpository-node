@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- `npx sendpository agents` installs the Sendpository skill for AI coding
+  agents into your project: `.claude/skills/sendpository/` for Claude Code, a
+  section in `AGENTS.md` for Codex, Copilot, Gemini CLI and others, and a
+  Cursor rule when the project uses Cursor. `--global`, `--dry-run` and
+  `--print` are supported. Nothing is written on `npm install`.
+- The skill ships in the package at `agents/sendpository/`, so an agent reads
+  instructions that match the SDK version installed.
+
 ## 0.4.0
 
 - `emails.send()` attaches an idempotency key to every call, generated when you
