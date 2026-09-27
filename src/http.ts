@@ -54,10 +54,13 @@ export class HttpClient {
       query?: Record<string, unknown>;
       idempotencyKey?: string;
       /**
-       * False for requests the server can't de-duplicate. A timeout or 5xx is
-       * ambiguous - the work may already have happened - so retrying one of
-       * those could do it twice. Rate limits are still retried: a 429 is
-       * refused before anything runs.
+       * Whether an ambiguous failure - a 5xx, a timeout, a network error, or a
+       * 2xx whose body couldn't be read - may be retried. The work may already
+       * have happened, so a retry is only safe when repeating it can't do it
+       * twice. Defaults to true for reads (GET) and for requests carrying an
+       * idempotency key (the server de-duplicates those), false for everything
+       * else. Rate limits are retried regardless: a 429 is refused before
+       * anything runs.
        */
       retryAmbiguous?: boolean;
     } = {},
@@ -73,63 +76,88 @@ export class HttpClient {
       "User-Agent": `sendpository-node/${VERSION}`,
     };
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+    // Set once, outside the loop, so every attempt carries the same key.
     if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
 
-    let lastError: SendpositoryError | undefined;
+    const safeToRepeat =
+      opts.retryAmbiguous ?? (method.toUpperCase() === "GET" || Boolean(opts.idempotencyKey));
 
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+    for (let attempt = 0; ; attempt++) {
+      let failure: SendpositoryError;
+      let ambiguous: boolean;
+
+      let res: Response | null = null;
       try {
-        const res = await this.fetchImpl(url.toString(), {
+        res = await this.fetchImpl(url.toString(), {
           method,
           headers,
           body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
           signal: AbortSignal.timeout(this.timeout),
         });
-
-        if (res.ok) {
-          if (res.status === 204) return undefined as T;
-          return (await res.json()) as T;
-        }
-
-        const payload = (await res.json().catch(() => null)) as
-          | { error?: { type?: string; message?: string } }
-          | null;
-
-        const error = new SendpositoryError({
-          type: (payload?.error?.type as SendpositoryErrorType) ?? "internal_error",
-          message: payload?.error?.message ?? `Request failed with status ${res.status}`,
-          status: res.status,
-          retryAfter: Number(res.headers.get("retry-after")) || undefined,
-        });
-
-        const ambiguous = error.status >= 500;
-        if (!error.isRetryable || attempt === this.maxRetries || (ambiguous && opts.retryAmbiguous === false)) {
-          throw error;
-        }
-        lastError = error;
-        // Honour Retry-After exactly; retrying sooner just burns the budget.
-        await sleep(error.retryAfter ? error.retryAfter * 1000 : backoff(attempt));
       } catch (err) {
-        // Thrown above only once the decision not to retry has been made.
-        if (err instanceof SendpositoryError) throw err;
-
-        const wrapped = new SendpositoryError({
+        // No response at all: refused, reset, or timed out. The request may
+        // still have reached the server and run.
+        failure = new SendpositoryError({
           type: "connection_error",
           message: err instanceof Error ? err.message : "Network request failed",
           status: 0,
         });
-        if (attempt === this.maxRetries || opts.retryAmbiguous === false) throw wrapped;
-        lastError = wrapped;
-        await sleep(backoff(attempt));
+        ambiguous = true;
       }
-    }
 
-    throw lastError ?? new SendpositoryError({
-      type: "internal_error",
-      message: "Request failed",
-      status: 0,
-    });
+      if (res) {
+        if (res.ok) {
+          if (res.status === 204) return undefined as T;
+          try {
+            return (await res.json()) as T;
+          } catch {
+            // It succeeded, but we can't say with what - not a network error.
+            failure = new SendpositoryError({
+              type: "internal_error",
+              message: `The request succeeded (${res.status}) but its response could not be read.`,
+              status: res.status,
+            });
+            ambiguous = true;
+          }
+        } else {
+          failure = await errorFrom(res);
+          ambiguous = res.status >= 500;
+        }
+      }
+
+      const retry =
+        attempt < this.maxRetries &&
+        (failure!.type === "rate_limit_exceeded" || (ambiguous! && safeToRepeat));
+      if (!retry) throw failure!;
+      // Honour Retry-After exactly; retrying sooner just burns the budget.
+      await sleep(failure!.retryAfter ? failure!.retryAfter * 1000 : backoff(attempt));
+    }
   }
+}
+
+/**
+ * An error from a non-2xx response. The API always answers with a typed JSON
+ * error; anything else came from something in between (a proxy, a wrong base
+ * URL, a platform limit), so the type is read from the status instead of
+ * being assumed to be ours - a 404 page is not an internal error to retry.
+ */
+async function errorFrom(res: Response) {
+  const payload = (await res.json().catch(() => null)) as { error?: { type?: string; message?: string } } | null;
+  return new SendpositoryError({
+    type: (payload?.error?.type as SendpositoryErrorType | undefined) ?? typeForStatus(res.status),
+    message: payload?.error?.message ?? `Request failed with status ${res.status}`,
+    status: res.status,
+    retryAfter: Number(res.headers.get("retry-after")) || undefined,
+  });
+}
+
+function typeForStatus(status: number): SendpositoryErrorType {
+  if (status === 429) return "rate_limit_exceeded";
+  if (status >= 500) return "internal_error";
+  if (status === 401) return "authentication_error";
+  if (status === 403) return "permission_denied";
+  if (status === 404) return "not_found";
+  return "validation_error";
 }
 
 /** Exponential backoff with jitter, so retries don't arrive in lockstep. */

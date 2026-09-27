@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.2
+
+Retries no longer risk doing a write twice.
+
+- Timeouts, 5xx, network errors and unreadable responses are retried only
+  for reads and for `emails.send()` (which carries an idempotency key).
+  Creating API keys, webhooks and domains, cancelling, updating and deleting
+  now throw on those failures instead of retrying - a retry after a request
+  that had in fact succeeded could create a second key or webhook, or fail
+  with a misleading "already exists". Rate limits are still retried on every
+  call.
+- A non-JSON error response (a proxy's 502 page, a 404 from a wrong base URL,
+  a platform's 413) is typed from its status - `not_found`,
+  `validation_error` and so on - instead of `internal_error`, so it is no
+  longer retried pointlessly.
+- A 2xx whose body can't be read is reported as that, not as a network
+  error.
+- New test matrix: every operation against every kind of failure (179 cases).
+
 ## 0.5.1
 
 - `npx sendpository init` keeps a key the project already has instead of

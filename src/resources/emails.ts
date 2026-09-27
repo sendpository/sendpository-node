@@ -36,8 +36,10 @@ export class Emails {
     }
     const res = await this.http.request<{ data: BatchResult[] }>("POST", "/emails/batch", {
       body: messages,
-      // The batch endpoint has no idempotency key yet, so a timeout is not
-      // retried - it may already have sent. Check with emails.list() instead.
+      // The batch endpoint has no idempotency key, so a timeout or 5xx is not
+      // retried - some or all of it may already have sent. Check with
+      // emails.list() instead. (Unkeyed POSTs aren't retried anyway; this
+      // says so where it matters most.)
       retryAmbiguous: false,
     });
     return res.data;

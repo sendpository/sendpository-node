@@ -110,14 +110,24 @@ try {
 }
 ```
 
-Rate limits, 5xx and network errors are retried automatically - twice by
-default, and `Retry-After` is respected exactly. Configure with
-`new Sendpository(key, { maxRetries: 5 })`.
+Retries are automatic - twice by default, configurable with
+`new Sendpository(key, { maxRetries: 5 })` - and follow one rule: **never
+repeat something that might already have happened, unless repeating it is
+harmless.**
 
-Those retries can't send twice: `emails.send()` attaches an idempotency key to
-every call, generated if you didn't pass one. `emails.sendBatch()` has no key
-yet, so a timeout or 5xx on a batch is thrown rather than retried - check with
-`emails.list()` before sending it again.
+| Failure | Reads (`get`, `list`) and `emails.send` | Every other call |
+|---|---|---|
+| Rate limit (429) - refused before anything ran | Retried, after exactly `Retry-After` | Retried, after exactly `Retry-After` |
+| 5xx, timeout, network error, unreadable response - may have happened | Retried | **Thrown, not retried** |
+| Any other 4xx - will fail the same way again | Thrown | Thrown |
+
+`emails.send()` is safe to retry because it always carries an idempotency key
+(one is generated if you don't pass one), so a repeat returns the original id
+instead of sending twice. Creating keys, webhooks and domains, cancelling,
+deleting, and `emails.sendBatch()` have no such key: after an ambiguous
+failure the SDK throws rather than risk a second key, a second webhook or a
+second batch of email. Check the current state (for a batch, with
+`emails.list()`) before trying again.
 
 ## Verifying webhooks
 

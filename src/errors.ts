@@ -38,7 +38,14 @@ export class SendpositoryError extends Error {
     this.retryAfter = opts.retryAfter;
   }
 
-  /** True when trying again could plausibly succeed. */
+  /**
+   * True when trying again could plausibly succeed.
+   *
+   * For a write, "could succeed" is not "safe": after an `internal_error` or
+   * `connection_error` the first attempt may already have happened. Retry a
+   * send with the same idempotency key; check the current state before
+   * repeating anything else.
+   */
   get isRetryable() {
     return (
       this.type === "rate_limit_exceeded" ||

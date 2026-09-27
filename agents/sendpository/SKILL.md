@@ -97,9 +97,12 @@ Useful options on `emails.send`:
 | `track_opens`, `track_clicks` | Off by default. Leave them off for password resets and codes. |
 | `list_unsubscribe` | One-click unsubscribe headers; needed for marketing/bulk mail to Gmail and Yahoo. A `{{unsubscribe_url}}` in the body is replaced with the link. Single recipient only. |
 
-Retries: the SDK retries rate limits and transient errors itself and adds an
-idempotency key to every `send`. Pass your own when the send is triggered by
-something that can happen twice:
+Retries: the SDK retries rate limits on every call, and timeouts, 5xx and
+network errors only on reads and `emails.send` (which always carries an
+idempotency key). Other writes - creating keys, webhooks, domains, batches -
+throw on an ambiguous failure instead of risking doing it twice; check state
+before retrying those yourself. Pass your own key to `send` when the send is
+triggered by something that can happen twice:
 
 ```ts
 await sendpository.emails.send(message, { idempotencyKey: `welcome-${user.id}` });
