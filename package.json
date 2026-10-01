@@ -66,10 +66,13 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "sync:skill": "node scripts/sync-skill.mjs"
   },
+  "overrides": {
+    "esbuild": "^0.28.2"
+  },
   "devDependencies": {
     "@types/node": "^20.19.43",
     "tsup": "^8.5.0",
     "typescript": "^5",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.11"
   }
 }

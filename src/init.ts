@@ -102,26 +102,78 @@ export function writeEnvKey(path: string, key: string) {
 }
 
 /**
+ * Whether `cwd` is inside a git working tree - anywhere inside one, not just
+ * a directory that directly contains `.git`. Git repos are found by walking
+ * up from cwd, so asking git itself (`rev-parse`) is what makes this work
+ * from a project nested inside a larger repo (a monorepo package, say) -
+ * checking for a local `.git` entry only ever matches the repo's own root.
+ */
+function insideGitRepo(cwd: string): boolean {
+  const result = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], {
+    cwd,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return result.status === 0 && result.stdout?.toString().trim() === "true";
+}
+
+/**
+ * Whether git already has this file under version control. Ignore rules
+ * never affect a tracked file - adding it to .gitignore after the fact does
+ * not stop it being committed, so this has to be checked separately.
+ */
+export function isTracked(cwd: string, file: string): boolean {
+  if (!insideGitRepo(cwd)) return false;
+  const result = spawnSync("git", ["ls-files", "--error-unmatch", file], { cwd, stdio: "ignore" });
+  return result.status === 0;
+}
+
+/** A pattern's `*` becomes "anything"; everything else in it is literal. */
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+/**
+ * Whether `file` is ignored by these .gitignore lines, read in order with
+ * later patterns able to override earlier ones - `.env*` then `!.env.local`
+ * must leave `.env.local` NOT ignored, the same way git itself resolves it.
+ */
+function isIgnoredByPatterns(lines: string[], file: string): boolean {
+  let ignored = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const negate = line.startsWith("!");
+    const pattern = (negate ? line.slice(1) : line).replace(/^\//, "");
+    if (globToRegExp(pattern).test(file)) ignored = !negate;
+  }
+  return ignored;
+}
+
+/**
  * Makes sure the env file can't be committed. Asks git when it's there -
  * it knows every ignore rule - and otherwise reads .gitignore itself.
+ *
+ * Only decides; never writes a secret. Callers must check this (and
+ * `isTracked`) before the key ever touches disk, not after.
  */
 export function ensureIgnored(cwd: string, file: string) {
-  const isRepo = existsSync(join(cwd, ".git"));
+  const isRepo = insideGitRepo(cwd);
   if (isRepo) {
     const status = spawnSync("git", ["check-ignore", "-q", file], { cwd }).status;
     if (status === 0) return "already";
     // Anything but a clear "not ignored" (git missing, an odd repo) falls
-    // through to reading .gitignore ourselves.
+    // Git is authoritative inside a repository. A local pattern scan cannot
+    // account for nested ignore files, negations, or Git's complete syntax.
   }
   const gitignore = join(cwd, ".gitignore");
-  const lines = existsSync(gitignore) ? readFileSync(gitignore, "utf8").split(/\r?\n/).map((l) => l.trim()) : [];
-  const local = file.endsWith(".local");
-  const covered = lines.some(
-    (l) => l === file || l === `/${file}` || l === ".env*" || (local && (l === ".env*.local" || l === "*.local")),
-  );
-  if (covered) return "already";
+  const lines = existsSync(gitignore) ? readFileSync(gitignore, "utf8").split(/\r?\n/) : [];
+  if (!isRepo && isIgnoredByPatterns(lines, file)) return "already";
   if (!isRepo && !existsSync(gitignore)) return "no-git";
   appendFileSync(gitignore, `${lines.length && lines[lines.length - 1] !== "" ? "\n" : ""}${file}\n`);
+  if (isRepo && spawnSync("git", ["check-ignore", "-q", "--", file], { cwd }).status !== 0) {
+    throw new Error(`Git does not ignore ${file}. Refusing to save an API key there.`);
+  }
   return "added";
 }
 
@@ -189,7 +241,10 @@ async function connect(opts: InitOptions, deps: InitDeps): Promise<Approved> {
 /** Where the project already sets a non-empty key, if anywhere. */
 export function existingKeyFile(cwd: string, preferred?: string) {
   const candidates = [...new Set([preferred, ".env.local", ".env"].filter((f): f is string => Boolean(f)))];
-  const pattern = new RegExp(`^\\s*(export\\s+)?${KEY}\\s*=\\s*["']?([^"'\\s#]+)`, "m");
+  // Horizontal whitespace only after `=` - `\s*` there can match a newline
+  // too, so an empty placeholder followed by another `KEY=value` line was
+  // misread as this one being populated, with the next line's value captured.
+  const pattern = new RegExp(`^\\s*(export\\s+)?${KEY}\\s*=[ \\t]*["']?([^"'\\s#]+)`, "m");
   return candidates.find((f) => {
     const path = join(cwd, f);
     return existsSync(path) && pattern.test(readFileSync(path, "utf8"));
@@ -210,14 +265,36 @@ export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Pro
   if (already) {
     envFile = already;
     deps.log(`✓ Found ${KEY} in ${already} - keeping it. Run with --force to connect again and replace it.`);
+    // The key already lives in this file - if git is already tracking it,
+    // that key is exposed in the repository regardless of anything we do to
+    // .gitignore from here, so this has to stop and say so, not just quietly
+    // ignore it going forward.
+    if (isTracked(opts.cwd, envFile)) {
+      deps.log(`✗ ${envFile} is tracked by git - the ${KEY} in it is exposed in this repository.`);
+      deps.log(`  Untrack it (git rm --cached ${envFile}) and rotate the key in your dashboard.`);
+      return 1;
+    }
+    const ignored = ensureIgnored(opts.cwd, envFile);
+    if (ignored === "added") deps.log(`✓ Added ${envFile} to .gitignore so the key is never committed`);
   } else {
+    /*
+     * The safety decision comes before the key ever exists on disk - a
+     * destination git already tracks can't be made safe by adding it to
+     * .gitignore after the fact, so refuse rather than write and warn.
+     */
+    if (isTracked(opts.cwd, envFile)) {
+      deps.log(`✗ ${envFile} is already tracked by git - refusing to write your API key there.`);
+      deps.log(`  Untrack it first (git rm --cached ${envFile}), or rerun with --env-file pointing at an untracked file.`);
+      return 1;
+    }
+    const ignored = ensureIgnored(opts.cwd, envFile);
+    if (ignored === "added") deps.log(`✓ Added ${envFile} to .gitignore so the key is never committed`);
+
     approved = await connect(opts, deps);
     deps.log(`✓ Connected${approved.email ? ` to ${approved.email}` : ""}`);
     const how = writeEnvKey(join(opts.cwd, envFile), approved.api_key);
     deps.log(`✓ ${how === "replaced" ? "Replaced" : "Saved"} ${KEY} in ${envFile}${how === "replaced" ? " (the old key still works until you revoke it)" : ""}`);
   }
-  const ignored = ensureIgnored(opts.cwd, envFile);
-  if (ignored === "added") deps.log(`✓ Added ${envFile} to .gitignore so the key is never committed`);
   if (documentInExample(opts.cwd)) deps.log(`✓ Documented ${KEY} in .env.example (no value)`);
 
   const pkgPath = join(opts.cwd, "package.json");

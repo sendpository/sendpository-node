@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { chooseEnvFile, ensureIgnored, existingKeyFile, packageManager, runInit, writeEnvKey, type InitDeps } from "../src/init.js";
+import { chooseEnvFile, ensureIgnored, existingKeyFile, isTracked, packageManager, runInit, writeEnvKey, type InitDeps } from "../src/init.js";
 
 const project = (files: Record<string, string> = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "sp-init-"));
@@ -158,6 +159,40 @@ describe("npx sendpository init", () => {
 });
 
 describe("init helpers", () => {
+  it("does not read the next variable as an empty API key", () => {
+    expect(existingKeyFile(project({ ".env": "SENDPOSITORY_API_KEY=\nDATABASE_URL=fake\n" }))).toBeNull();
+  });
+
+  it("honors Git negation rules before saving a key", () => {
+    const cwd = project({ ".gitignore": ".env*\n!.env.local\n", ".env.local": "" });
+    expect(spawnSync("git", ["init", "-q"], { cwd }).status).toBe(0);
+    expect(ensureIgnored(cwd, ".env.local")).toBe("added");
+    expect(spawnSync("git", ["check-ignore", "-q", ".env.local"], { cwd }).status).toBe(0);
+  });
+
+  it("refuses tracked env files from a nested project before connecting", async () => {
+    const root = project();
+    spawnSync("git", ["init", "-q"], { cwd: root });
+    const cwd = join(root, "nested");
+    mkdirSync(cwd);
+    writeFileSync(join(cwd, ".env"), "SENDPOSITORY_API_KEY=\n");
+    spawnSync("git", ["add", "nested/.env"], { cwd: root });
+    expect(isTracked(cwd, ".env")).toBe(true);
+    const server = fakeServer({ status: "approved", api_key: KEY });
+    const { d } = deps(server.fetchFn);
+    expect(await runInit({ cwd, appUrl: "https://app.test", install: false, agents: false, test: false }, d)).toBe(1);
+    expect(server.calls).toHaveLength(0);
+    expect(read(cwd, ".env")).toBe("SENDPOSITORY_API_KEY=\n");
+  });
+
+  it("refuses an existing key already tracked by Git", async () => {
+    const cwd = project({ ".env": `SENDPOSITORY_API_KEY=${KEY}\n` });
+    spawnSync("git", ["init", "-q"], { cwd });
+    spawnSync("git", ["add", ".env"], { cwd });
+    const server = fakeServer({ status: "approved", api_key: KEY });
+    expect(await runInit({ cwd, appUrl: "https://app.test", install: false, agents: false, test: false }, deps(server.fetchFn).d)).toBe(1);
+    expect(server.calls).toHaveLength(0);
+  });
   it("replaces an existing key line instead of adding a second", () => {
     const cwd = project({ ".env": "A=1\nexport SENDPOSITORY_API_KEY=sp_old\nB=2\n" });
     expect(writeEnvKey(join(cwd, ".env"), "sp_new")).toBe("replaced");
