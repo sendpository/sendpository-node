@@ -11,7 +11,11 @@ export type SendpositoryErrorType =
   | "email_not_verified"
   | "suppressed_recipient"
   | "internal_error"
-  | "connection_error";
+  | "connection_error"
+  | "idempotency_key_reused"
+  | "idempotency_in_progress"
+  | "idempotency_original_failed"
+  | "send_outcome_unknown";
 
 /**
  * Thrown for every non-2xx response, and for network failures.
@@ -49,6 +53,7 @@ export class SendpositoryError extends Error {
   get isRetryable() {
     return (
       this.type === "rate_limit_exceeded" ||
+      this.type === "idempotency_in_progress" ||
       this.type === "internal_error" ||
       this.type === "connection_error"
     );

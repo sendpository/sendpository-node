@@ -127,7 +127,9 @@ export class HttpClient {
 
       const retry =
         attempt < this.maxRetries &&
-        (failure!.type === "rate_limit_exceeded" || (ambiguous! && safeToRepeat));
+        (failure!.type === "rate_limit_exceeded" ||
+          (failure!.type === "idempotency_in_progress" && safeToRepeat) ||
+          (ambiguous! && safeToRepeat && failure!.type !== "send_outcome_unknown"));
       if (!retry) throw failure!;
       // Honour Retry-After exactly; retrying sooner just burns the budget.
       await sleep(failure!.retryAfter ? failure!.retryAfter * 1000 : backoff(attempt));

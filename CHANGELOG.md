@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.0
+
+- Email reads now describe both permission-dependent response shapes. A sending
+  key can read delivery status only for messages created by that same key;
+  a full-access key can also read message content. Narrow with `"to" in email`
+  before accessing recipients or bodies. This corrects the previous types,
+  which promised fields the secured API does not return. Rotating a sending
+  key does not grant the replacement access to the old key's messages.
+- `idempotency_in_progress` retries preserve the original idempotency key.
+  `send_outcome_unknown` stops automatic retries and requires checking the
+  original operation; a new key could duplicate mail already accepted.
+- New error type `idempotency_original_failed` (409): the original attempt under
+  that key finished and failed. It replaces the `500 internal_error` that case
+  used to return, which `isRetryable` reported as worth retrying - so a client
+  retrying 5xx repeated a request whose answer could never change. The new type
+  is not retryable; check the named message's delivery state first.
+- `init` validates an existing project key before reusing it and preserves the
+  file on failure. `--no-test` explicitly skips that check. New projects use
+  `.env.local` for Next.js and `.env` otherwise; load it in your server runtime
+  and never expose the key to browser code.
+
+These changes require publishing a new SDK/CLI version; changing the workspace
+does not update an existing installation or `npx sendpository@latest`.
+
 ## 0.5.2
 
 Retries no longer risk doing a write twice.

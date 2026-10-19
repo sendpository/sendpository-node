@@ -80,7 +80,7 @@ export function chooseEnvFile(cwd: string) {
   if (existsSync(join(cwd, ".env.local"))) return ".env.local";
   const pkg = readJson(join(cwd, "package.json"));
   const deps = { ...pkg?.dependencies, ...pkg?.devDependencies };
-  if (deps.next || deps.nuxt || deps["@remix-run/node"] || deps.vite) return ".env.local";
+  if (deps.next) return ".env.local";
   return ".env";
 }
 
@@ -276,6 +276,28 @@ export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Pro
     }
     const ignored = ensureIgnored(opts.cwd, envFile);
     if (ignored === "added") deps.log(`✓ Added ${envFile} to .gitignore so the key is never committed`);
+    if (opts.test) {
+      const contents = readFileSync(join(opts.cwd, envFile), "utf8");
+      const key = contents.match(/^\s*(?:export\s+)?SENDPOSITORY_API_KEY\s*=[ \t]*["']?([^"'\s#]+)/m)?.[1];
+      try {
+        const response = await deps.fetch(`${opts.appUrl.replace(/\/$/, "")}/api/v1/emails?limit=1`, {
+          headers: { authorization: `Bearer ${key}` },
+          redirect: "error",
+          signal: AbortSignal.timeout(15_000),
+        });
+        const body = await response.json().catch(() => null) as { data?: unknown } | null;
+        if (!response.ok || !Array.isArray(body?.data)) {
+          deps.log(`✗ Existing key check failed (${response.status}). Check the app URL and key; use --force to approve a replacement.`);
+          return 1;
+        }
+        deps.log("✓ Existing key authenticated. No email was sent; run an example from your application to test sending.");
+      } catch {
+        deps.log("✗ Could not check the existing key. Check your connection and app URL, then retry. The key was kept.");
+        return 1;
+      }
+    } else {
+      deps.log("! Connection check skipped (--no-test). The existing key has not been validated.");
+    }
   } else {
     /*
      * The safety decision comes before the key ever exists on disk - a
@@ -347,7 +369,9 @@ export async function runInit(opts: InitOptions, deps: InitDeps = realDeps): Pro
       ? '  2. Ask your coding agent: "Add Sendpository email to this project."'
       : "  2. Send from your code: https://sendpository.com/docs/quickstart",
   );
-  if (approved && !tested && !approved.sandbox_from) deps.log("     Sending works once the domain is verified.");
+  if (approved && !tested && !approved.sandbox_from) deps.log("     No sandbox sender is available. Verify a sending domain, then run an example with this key.");
+  if (approved && !opts.test) deps.log("     Test skipped (--no-test). Application integration still needs a test.");
+  deps.log(`  Load ${envFile} in your server runtime. For plain Node: node --env-file=${envFile} your-script.mjs. Never expose this key in browser code.`);
   return 0;
 }
 

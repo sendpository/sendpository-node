@@ -71,6 +71,37 @@ describe("emails.send", () => {
   });
 });
 
+describe("delivery response contracts", () => {
+  it("keeps restricted and full-access details distinguishable", async () => {
+    const delivery = { id: "e1", status: "sent", created_at: new Date().toISOString(), sent_at: null, delivered_at: null, events: [] };
+    const { fetch } = fakeFetch({ status: 200, body: delivery }, { status: 200, body: { ...delivery, from: "hi@example.test", to: ["recipient@example.test"], subject: "Hello" } });
+    const client = new Sendpository("sp_test", { fetch });
+    const restricted = await client.emails.get("e1");
+    expect("to" in restricted).toBe(false);
+    expect(restricted.status).toBe("sent");
+    const content = await client.emails.get("e1");
+    expect("to" in content && content.to.join(", ")).toBe("recipient@example.test");
+  });
+
+  it("retries an in-progress response with the original operation key", async () => {
+    const { fetch, calls } = fakeFetch(
+      { status: 409, body: { error: { type: "idempotency_in_progress", message: "Still dispatching" } } },
+      { status: 200, body: { id: "e1" } },
+    );
+    const client = new Sendpository("sp_test", { fetch });
+    expect(await client.emails.send(message)).toEqual({ id: "e1" });
+    expect(calls).toHaveLength(2);
+    expect(header(calls, 0, "Idempotency-Key")).toBe(header(calls, 1, "Idempotency-Key"));
+  });
+
+  it("surfaces an uncertain transport outcome without an automatic retry", async () => {
+    const { fetch, calls } = fakeFetch({ status: 503, body: { error: { type: "send_outcome_unknown", message: "Check delivery" } } });
+    const client = new Sendpository("sp_test", { fetch });
+    await expect(client.emails.send(message)).rejects.toMatchObject({ type: "send_outcome_unknown" });
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("emails.sendBatch", () => {
   it("does not retry a 5xx, which may already have sent", async () => {
     const { fetch, calls } = fakeFetch({ status: 502, body: { error: { type: "internal_error", message: "x" } } });

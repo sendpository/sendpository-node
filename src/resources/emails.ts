@@ -45,7 +45,7 @@ export class Emails {
     return res.data;
   }
 
-  /** Current status and the full delivery timeline. */
+  /** Delivery state for this sending key; content requires full access. Narrow with `"to" in email`. */
   get(id: string) {
     return this.http.request<Email>("GET", `/emails/${encodeURIComponent(id)}`);
   }

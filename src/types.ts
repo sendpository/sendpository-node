@@ -78,8 +78,19 @@ export interface EmailEvent {
   occurred_at: string;
 }
 
-export interface Email {
+/** Delivery-only response returned to a sending key for its own messages. */
+export interface EmailDelivery {
   id: string;
+  status: EmailStatus;
+  created_at: string;
+  sent_at: string | null;
+  delivered_at: string | null;
+  failure_detail?: string | null;
+  events: EmailEvent[];
+}
+
+/** Content is returned only with a full-access key. */
+export interface EmailContent extends EmailDelivery {
   from: string;
   to: string[];
   cc: string[];
@@ -89,20 +100,23 @@ export interface Email {
   html: string | null;
   text: string | null;
   tags: Record<string, string> | null;
-  status: EmailStatus;
-  created_at: string;
-  sent_at: string | null;
-  delivered_at: string | null;
-  events: EmailEvent[];
 }
 
-export interface EmailListItem {
+/** Narrow with `"to" in email` before accessing message content. */
+export type Email = EmailDelivery | EmailContent;
+
+export interface EmailListDelivery {
   id: string;
-  to: string[];
-  subject: string;
   status: EmailStatus;
   created_at: string;
 }
+
+export interface EmailListContent extends EmailListDelivery {
+  to: string[];
+  subject: string;
+}
+
+export type EmailListItem = EmailListDelivery | EmailListContent;
 
 /** One entry per message: the id, or the error that stopped it. */
 export type BatchResult = { id: string } | { error: { type: string; message: string } };

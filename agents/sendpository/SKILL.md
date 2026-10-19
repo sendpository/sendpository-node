@@ -194,6 +194,10 @@ HTTP status below.
 | `suppressed_recipient` | 422 | The address bounced or complained before. Not a bug - skip it, don't retry. |
 | `quota_exceeded` | 402 | Monthly or daily allowance used. Alert someone; don't loop. |
 | `trial_expired` | 402 | The trial ended; a plan is needed. |
+| `idempotency_key_reused` | 409 | The same `Idempotency-Key` was used for a different message. Use a new key for a new message; resend the original request unchanged to retry it. |
+| `idempotency_in_progress` | 409 | The first attempt with this key is still dispatching. Wait `Retry-After`, then retry with the same key and body. |
+| `idempotency_original_failed` | 409 | The first attempt with this key finished and failed. Don't loop: check that message's delivery state, then decide whether to send again. |
+| `send_outcome_unknown` | 503 | The relay may already have accepted the message. Never retry with a new key - check delivery first, keep the same key. |
 | `rate_limit_exceeded` | 429 | Wait `Retry-After` seconds, then retry. |
 | `not_found` | 404 | No such message, domain or key on this account. |
 | `internal_error` | 500 | Retry with backoff, with the same idempotency key. |

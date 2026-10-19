@@ -122,10 +122,10 @@ const HELP = `Sendpository CLI
                                      and the agent skill are installed, and a test
                                      email is sent where your account allows it.
       --env-file <file>              Where to write the key (default .env.local for
-                                     Next.js/Vite projects, otherwise .env).
+                                     Next.js projects, otherwise .env).
       --no-install                   Don't install the sendpository package.
       --no-agents                    Don't install the agent skill.
-      --no-test                      Don't send a test email.
+      --no-test                      Skip the connection check and test email.
       --force                        Connect again even if the project already has
                                      a key, and replace it.
 

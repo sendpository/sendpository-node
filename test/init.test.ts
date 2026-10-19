@@ -28,6 +28,7 @@ function fakeServer(final: Record<string, unknown>, opts: { pendingPolls?: numbe
       polls++;
       return json(polls <= (opts.pendingPolls ?? 1) ? { status: "pending" } : final);
     }
+    if (url.endsWith("/emails?limit=1")) return json({ data: [] });
     if (url.endsWith("/emails")) return json({ id: "e1" });
     return json({}, 404);
   }) as unknown as typeof fetch;
@@ -110,10 +111,31 @@ describe("npx sendpository init", () => {
     const { fetchFn, calls } = fakeServer(approved);
     const { d, log } = deps(fetchFn);
     await runInit(options(cwd), d);
-    expect(calls).toEqual([]); // never asked for a new key
+    expect(calls.map(call => call.url)).toEqual(["https://app.test/api/v1/emails?limit=1"]); // validates, never mints or sends
+    expect(log.join("\n")).toContain("Existing key authenticated");
     expect(read(cwd, ".env.local")).toBe("SENDPOSITORY_API_KEY=sp_existing_key_123\n");
     expect(log.join("\n")).toContain("keeping it");
     expect(existsSync(join(cwd, ".claude/skills/sendpository/SKILL.md"))).toBe(true); // the rest still happens
+  });
+
+  it("refuses to claim an invalid existing key works and preserves the file", async () => {
+    const cwd = project({ ".env": "SENDPOSITORY_API_KEY=sp_revoked\n" });
+    const { d, log, runs, opened } = deps(async () => new Response(JSON.stringify({ error: { type: "authentication_error" } }), { status: 401 }));
+    expect(await runInit(options(cwd), d)).toBe(1);
+    expect(read(cwd, ".env")).toBe("SENDPOSITORY_API_KEY=sp_revoked\n");
+    expect(runs).toEqual([]);
+    expect(opened).toEqual([]);
+    expect(log.join("\n")).toContain("Existing key check failed");
+    expect(log.join("\n")).not.toContain("sp_revoked");
+  });
+
+  it("skips existing-key validation only when testing is explicitly disabled", async () => {
+    const cwd = project({ ".env": "SENDPOSITORY_API_KEY=sp_kept\n" });
+    const { fetchFn, calls } = fakeServer(approved);
+    const { d, log } = deps(fetchFn);
+    expect(await runInit({ ...options(cwd), test: false, agents: false }, d)).toBe(0);
+    expect(calls).toEqual([]);
+    expect(log.join("\n")).toContain("has not been validated");
   });
 
   it("replaces an existing key only with --force", async () => {
@@ -205,9 +227,9 @@ describe("init helpers", () => {
     expect(read(cwd, ".env")).toBe("A=1\nSENDPOSITORY_API_KEY=sp_new\n");
   });
 
-  it("picks .env.local for Next.js and Vite, .env otherwise", () => {
+  it("picks .env.local for Next.js; other runtimes get explicit .env instructions", () => {
     expect(chooseEnvFile(project({ "package.json": JSON.stringify({ dependencies: { next: "1" } }) }))).toBe(".env.local");
-    expect(chooseEnvFile(project({ "package.json": JSON.stringify({ devDependencies: { vite: "1" } }) }))).toBe(".env.local");
+    expect(chooseEnvFile(project({ "package.json": JSON.stringify({ devDependencies: { vite: "1" } }) }))).toBe(".env");
     expect(chooseEnvFile(project({ "package.json": JSON.stringify({ dependencies: { express: "1" } }) }))).toBe(".env");
     expect(chooseEnvFile(project({ ".env.local": "" }))).toBe(".env.local");
   });
